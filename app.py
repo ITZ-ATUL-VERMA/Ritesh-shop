@@ -6,8 +6,8 @@ from datetime import datetime
 import uuid
 import os
 import certifi
-
-app = FastAPI(title="Shop Management Backend")
+import uvicorn
+from contextlib import asynccontextmanager
 
 # Global DB variables
 db = None
@@ -15,12 +15,13 @@ users_col = None
 items_col = None
 sold_col = None
 
-@app.on_event("startup")
-def startup_db_client():
+# Naya Lifespan method (DeprecationWarning theek karne ke liye)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global db, users_col, items_col, sold_col
     try:
         print("MongoDB se connect ho raha hai...")
-        # Render Environment Variable se URL lega, ya default wala use karega
+        # Render Environment Variable se URL lega
         MONGO_URL = os.getenv("MONGO_URL", "mongodb+srv://atulverma73077_db_user:eaRbkkjVagEPVjLy@cluster2.iapf8i3.mongodb.net/?appName=Cluster2")
         
         client = pymongo.MongoClient(MONGO_URL, tlsCAFile=certifi.where())
@@ -37,6 +38,12 @@ def startup_db_client():
         print("=========================================")
         print(f"MONGODB CONNECTION ERROR: {e}")
         print("=========================================")
+    
+    yield # App jab tak chalega yahan pause rahega
+    print("Server band ho raha hai...")
+
+# FastAPI app ko naye lifespan ke sath initialize karna
+app = FastAPI(title="Shop Management Backend", lifespan=lifespan)
 
 # Models
 class LoginRequest(BaseModel):
@@ -139,3 +146,7 @@ def get_receipt(invoice_id: str):
     for i in b_items:
         i["_id"] = str(i["_id"])
     return {"items": b_items}
+
+# Yeh block app ko continuously run karne ke liye zaroori hai
+if __name__ == "__main__":
+    uvicorn.run("app:app", host="0.0.0.0", port=10000)
