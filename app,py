@@ -10,7 +10,7 @@ import certifi
 app = FastAPI(title="Shop Management Backend")
 
 # Environment Variable se URL lega (Hacking impossible)
-MONGO_URL = os.getenv("MONGO_URL", "mongodb+srv://atulverm4667_db_user:fX13K0dmss9UFGHZ@cluster0.uuykyts.mongodb.net/?appName=Cluster0")
+MONGO_URL = os.getenv("MONGO_URL", "mongodb+srv://<atulverma73077_db_user>:eaRbkkjVagEPVjLy@cluster2.iapf8i3.mongodb.net/?appName=Cluster2")
 
 client = pymongo.MongoClient(MONGO_URL, tlsCAFile=certifi.where())
 db = client["mourya_furniture"]
