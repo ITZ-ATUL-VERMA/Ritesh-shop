@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import pymongo
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -15,13 +16,12 @@ users_col = None
 items_col = None
 sold_col = None
 
-# Naya Lifespan method (DeprecationWarning theek karne ke liye)
+# Lifespan event for Database Connection
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db, users_col, items_col, sold_col
     try:
         print("MongoDB se connect ho raha hai...")
-        # Render Environment Variable se URL lega
         MONGO_URL = os.getenv("MONGO_URL", "mongodb+srv://atulverma73077_db_user:eaRbkkjVagEPVjLy@cluster2.iapf8i3.mongodb.net/?appName=Cluster2")
         
         client = pymongo.MongoClient(MONGO_URL, tlsCAFile=certifi.where())
@@ -30,7 +30,6 @@ async def lifespan(app: FastAPI):
         items_col = db["items"]
         sold_col = db["sold_items"]
         
-        # Default Admin Setup
         if not users_col.find_one({"email": "admin@gmail.com"}):
             users_col.insert_one({"email": "admin@gmail.com", "password": generate_password_hash("ritesh123"), "role": "owner"})
         print(">>> MongoDB Connected Successfully! <<<")
@@ -39,11 +38,38 @@ async def lifespan(app: FastAPI):
         print(f"MONGODB CONNECTION ERROR: {e}")
         print("=========================================")
     
-    yield # App jab tak chalega yahan pause rahega
+    yield 
     print("Server band ho raha hai...")
 
-# FastAPI app ko naye lifespan ke sath initialize karna
 app = FastAPI(title="Shop Management Backend", lifespan=lifespan)
+
+# --- DUMMY WEB PAGE (Root Endpoint) ---
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    return """
+    <html>
+        <head>
+            <title>Ritesh Shop Backend</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background-color: #eef2f3; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+                .card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); width: 90%; max-width: 400px; }
+                h1 { color: #5D4037; margin-bottom: 10px; font-size: 28px; }
+                p { color: #555; font-size: 16px; margin-bottom: 20px; }
+                .status { display: inline-block; background: #e8f5e9; color: #2e7d32; padding: 8px 15px; border-radius: 20px; font-weight: bold; font-size: 14px; border: 1px solid #c8e6c9; }
+                .icon { font-size: 60px; margin-bottom: 15px; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="icon">🏪</div>
+                <h1>Ritesh Shop Server</h1>
+                <p>Welcome! The backend management system is fully active and secured.</p>
+                <div class="status">🟢 System is Live</div>
+            </div>
+        </body>
+    </html>
+    """
 
 # Models
 class LoginRequest(BaseModel):
@@ -64,7 +90,6 @@ class SellRequest(BaseModel):
     invoice_id: str = None
 
 # --- API Endpoints ---
-
 @app.post("/api/login")
 def login(data: LoginRequest):
     if users_col is None:
@@ -147,6 +172,5 @@ def get_receipt(invoice_id: str):
         i["_id"] = str(i["_id"])
     return {"items": b_items}
 
-# Yeh block app ko continuously run karne ke liye zaroori hai
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=10000)
