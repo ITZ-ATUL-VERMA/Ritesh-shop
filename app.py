@@ -10,167 +10,99 @@ import certifi
 import uvicorn
 from contextlib import asynccontextmanager
 
-# Global DB variables
 db = None
 users_col = None
 items_col = None
 sold_col = None
 
-# Lifespan event for Database Connection
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db, users_col, items_col, sold_col
     try:
-        print("MongoDB se connect ho raha hai...")
         MONGO_URL = os.getenv("MONGO_URL", "mongodb+srv://atulverma73077_db_user:eaRbkkjVagEPVjLy@cluster2.iapf8i3.mongodb.net/?appName=Cluster2")
-        
         client = pymongo.MongoClient(MONGO_URL, tlsCAFile=certifi.where())
         db = client["mourya_furniture"]
         users_col = db["users"]
         items_col = db["items"]
         sold_col = db["sold_items"]
-        
         if not users_col.find_one({"email": "admin@gmail.com"}):
             users_col.insert_one({"email": "admin@gmail.com", "password": generate_password_hash("ritesh123"), "role": "owner"})
-        print(">>> MongoDB Connected Successfully! <<<")
     except Exception as e:
-        print("=========================================")
-        print(f"MONGODB CONNECTION ERROR: {e}")
-        print("=========================================")
-    
+        print(f"ERROR: {e}")
     yield 
-    print("Server band ho raha hai...")
 
 app = FastAPI(title="Shop Management Backend", lifespan=lifespan)
 
-# --- DUMMY WEB PAGE (Root Endpoint) ---
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    return """
-    <html>
-        <head>
-            <title>Ritesh Shop Backend</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background-color: #eef2f3; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
-                .card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); width: 90%; max-width: 400px; }
-                h1 { color: #5D4037; margin-bottom: 10px; font-size: 28px; }
-                p { color: #555; font-size: 16px; margin-bottom: 20px; }
-                .status { display: inline-block; background: #e8f5e9; color: #2e7d32; padding: 8px 15px; border-radius: 20px; font-weight: bold; font-size: 14px; border: 1px solid #c8e6c9; }
-                .icon { font-size: 60px; margin-bottom: 15px; }
-            </style>
-        </head>
-        <body>
-            <div class="card">
-                <div class="icon">🏪</div>
-                <h1>Ritesh Shop Server</h1>
-                <p>Welcome! The backend management system is fully active and secured.</p>
-                <div class="status">🟢 System is Live</div>
-            </div>
-        </body>
-    </html>
-    """
+    return "<html><body style='text-align:center; padding:50px;'><h1>Ritesh Shop Server is Live 🟢</h1></body></html>"
 
-# Models
-class LoginRequest(BaseModel):
-    email: str
-    password: str
+class LoginRequest(BaseModel): email: str; password: str
+class ItemRequest(BaseModel): name: str; company: str; price: float; quantity: int
+class SellRequest(BaseModel): item_id: str; quantity: int; price: float; customer: str; invoice_id: str = None
 
-class ItemRequest(BaseModel):
-    name: str
-    company: str
-    price: float
-    quantity: int
-
-class SellRequest(BaseModel):
-    item_id: str
-    quantity: int
-    price: float
-    customer: str
-    invoice_id: str = None
-
-# --- API Endpoints ---
 @app.post("/api/login")
 def login(data: LoginRequest):
-    if users_col is None:
-        raise HTTPException(status_code=500, detail="Database connection failed")
     user = users_col.find_one({"email": data.email})
-    if user and check_password_hash(user["password"], data.password):
-        return {"status": "success", "message": "Login successful"}
+    if user and check_password_hash(user["password"], data.password): return {"status": "success"}
     raise HTTPException(status_code=401, detail="Galat Email ya Password!")
 
 @app.get("/api/items")
 def get_items():
-    if items_col is None:
-        return {"items": []}
     items = list(items_col.find())
-    for item in items:
-        item["_id"] = str(item["_id"])
+    for item in items: item["_id"] = str(item["_id"])
     return {"items": items}
 
 @app.post("/api/items")
 def add_item(data: ItemRequest):
-    if items_col is None:
-        raise HTTPException(status_code=500, detail="Database connection failed")
     existing = items_col.find_one({"name": data.name, "company": data.company})
     if existing:
         items_col.update_one({"_id": existing["_id"]}, {"$inc": {"quantity": data.quantity}, "$set": {"price": data.price}})
     else:
         items_col.insert_one(data.model_dump())
-    return {"status": "success", "message": "Item saved successfully"}
+    return {"status": "success"}
 
 @app.post("/api/sell")
 def sell_item(data: SellRequest):
-    if items_col is None:
-        raise HTTPException(status_code=500, detail="Database connection failed")
     from bson.objectid import ObjectId
     itm = items_col.find_one({"_id": ObjectId(data.item_id)})
-    if not itm:
-        raise HTTPException(status_code=404, detail="Item nahi mila")
-    if itm["quantity"] < data.quantity:
-        raise HTTPException(status_code=400, detail="Stock kam hai!")
-
+    if not itm: raise HTTPException(status_code=404, detail="Item nahi mila")
+    if itm["quantity"] < data.quantity: raise HTTPException(status_code=400, detail="Stock kam hai!")
+    
     nq = itm["quantity"] - data.quantity
-    if nq > 0:
-        items_col.update_one({"_id": itm["_id"]}, {"$set": {"quantity": nq}})
-    else:
-        items_col.delete_one({"_id": itm["_id"]})
+    if nq > 0: items_col.update_one({"_id": itm["_id"]}, {"$set": {"quantity": nq}})
+    else: items_col.delete_one({"_id": itm["_id"]})
 
     inv = data.invoice_id or str(uuid.uuid4())[:8].upper()
     now = datetime.now()
-    date_str = now.strftime("%A, %d-%m-%Y | %I:%M %p")
-
     sold_col.insert_one({
-        "invoice_id": inv,
-        "name": itm["name"],
-        "company": itm["company"],
-        "quantity_sold": data.quantity,
-        "price": data.price,
-        "total": data.quantity * data.price,
-        "customer": data.customer or "Unknown",
-        "date": date_str,
-        "timestamp": now.timestamp()
+        "invoice_id": inv, "name": itm["name"], "company": itm["company"], 
+        "quantity_sold": data.quantity, "price": data.price, "total": data.quantity * data.price, 
+        "customer": data.customer or "Unknown", "date": now.strftime("%A, %d-%m-%Y | %I:%M %p"), "timestamp": now.timestamp()
     })
-
     return {"status": "success", "invoice_id": inv}
 
 @app.get("/api/history")
 def get_history():
-    if sold_col is None:
-        return {"history": []}
     history = list(sold_col.find().sort("timestamp", -1))
-    for s in history:
-        s["_id"] = str(s["_id"])
+    for s in history: s["_id"] = str(s["_id"])
     return {"history": history}
 
 @app.get("/api/receipt/{invoice_id}")
 def get_receipt(invoice_id: str):
-    if sold_col is None:
-        return {"items": []}
     b_items = list(sold_col.find({"invoice_id": invoice_id}))
-    for i in b_items:
-        i["_id"] = str(i["_id"])
+    for i in b_items: i["_id"] = str(i["_id"])
     return {"items": b_items}
+
+# --- NAYA DELETE ENDPOINT ADD KIYA GAYA HAI ---
+@app.delete("/api/history/{record_id}")
+def delete_history(record_id: str):
+    from bson.objectid import ObjectId
+    try:
+        sold_col.delete_one({"_id": ObjectId(record_id)})
+        return {"status": "success"}
+    except Exception:
+        raise HTTPException(status_code=400, detail="Error deleting record")
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=10000)
